@@ -17,6 +17,9 @@
     <label>Your name</label>
     <input id="input-name" type="text" placeholder="e.g. Mike" maxlength="24" />
 
+    <label>Format (for the table you create)</label>
+    <select id="input-format"></select>
+
     <div class="landing-actions">
       <div class="landing-col">
         <button id="btn-create" class="btn primary">Create Table</button>
@@ -42,9 +45,10 @@
 <section id="screen-deck" class="screen hidden">
   <div class="card-panel">
     <h2>Table code: <span id="deck-room-code" class="room-code"></span> <button id="btn-copy-code" class="btn tiny">copy</button></h2>
-    <p class="subtle">Share this code with your friends so they can join. Paste your decklist below (one card per line, e.g. <code>4 Lightning Bolt</code>), or grab a random sample deck to skip typing one out.</p>
+    <p class="subtle">Format: <span id="deck-format-label">Casual</span></p>
+    <p class="subtle">Share this code with your friends so they can join. Paste your decklist below (one card per line, e.g. <code>4 Lightning Bolt</code>), or grab a random legal deck to skip typing one out.</p>
     <div class="random-deck-row">
-      <button id="btn-random-deck" class="btn tiny">🎲 Random Sample Deck</button>
+      <button id="btn-random-deck" class="btn tiny">🎲 Random Deck</button>
       <button id="btn-transform-deck" class="btn tiny">🔄 Transform Test Deck</button>
     </div>
     <textarea id="input-decklist" rows="12" placeholder="4 Lightning Bolt&#10;1 Sol Ring&#10;23 Mountain&#10;..."></textarea>
@@ -60,6 +64,7 @@
 <section id="screen-table" class="screen hidden">
   <div id="table-topbar">
     <span id="table-room-code"></span>
+    <span id="table-format-label" class="subtle"></span>
     <button id="btn-pin" class="btn tiny">📌 Keep Table Alive</button>
     <button id="btn-leave" class="btn tiny">Leave Table</button>
   </div>

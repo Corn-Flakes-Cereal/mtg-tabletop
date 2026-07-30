@@ -351,6 +351,7 @@ function viewFor(room, viewerId) {
     log: room.log.slice(-100),
     you: viewerId,
     pinned: !!room.pinned,
+    format: room.format,
   };
 }
 
@@ -373,6 +374,137 @@ function shuffle(arr) {
   return arr;
 }
 
+// ---------------------------------------------------------------------------
+// Formats — picked by the table creator, used to (a) flag (not block) cards
+// in a pasted decklist that aren't legal in that format, and (b) constrain
+// what the "Random Deck" button pulls from the local card database. Keys
+// match Scryfall's own `legalities` object keys exactly, so a card's
+// legalities blob can be checked with `legalities[key] === 'legal'` directly.
+// ---------------------------------------------------------------------------
+const FORMATS = [
+  { key: 'standard', label: 'Standard' },
+  { key: 'pioneer', label: 'Pioneer' },
+  { key: 'modern', label: 'Modern' },
+  { key: 'legacy', label: 'Legacy' },
+  { key: 'vintage', label: 'Vintage' },
+  { key: 'pauper', label: 'Pauper' },
+  { key: 'commander', label: 'Commander' },
+  { key: 'casual', label: 'Casual (no restrictions)' },
+];
+const FORMAT_KEYS = new Set(FORMATS.map((f) => f.key));
+
+const BASIC_LAND_BY_COLOR = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
+const ALL_COLORS = ['W', 'U', 'B', 'R', 'G'];
+
+// True if every color in a card's `colors`/`color_identity` JSON array
+// (whichever column is passed in) is within `allowed`. Colorless cards
+// (an empty array) always pass, so artifacts fit any color combination.
+function colorsSubsetOf(jsonArrayStr, allowed) {
+  let arr;
+  try {
+    arr = JSON.parse(jsonArrayStr || '[]') || [];
+  } catch {
+    arr = [];
+  }
+  return arr.every((c) => allowed.includes(c));
+}
+
+// Distinct-by-name candidate pool for random deck generation, filtered to a
+// format's legal cards (or unfiltered if `format` is falsy — used for
+// "casual"), plus an extra caller-supplied WHERE fragment (e.g. excluding
+// lands, or requiring "Legendary Creature" for commander candidates).
+function cardPool(format, extraWhereSql) {
+  let sql = `SELECT name, colors, color_identity, type_line FROM cards WHERE ${extraWhereSql}`;
+  const params = [];
+  if (format) {
+    sql += ' AND legalities LIKE ?';
+    params.push(`%"${format}":"legal"%`);
+  }
+  sql += ' GROUP BY name';
+  return cardDb.prepare(sql).all(...params);
+}
+
+function buildLandList(colors, totalLands) {
+  const useColors = colors.length ? colors : ALL_COLORS;
+  const base = Math.floor(totalLands / useColors.length);
+  let remainder = totalLands - base * useColors.length;
+  return useColors
+    .map((c) => ({ name: BASIC_LAND_BY_COLOR[c], qty: base + (remainder-- > 0 ? 1 : 0) }))
+    .filter((l) => l.qty > 0);
+}
+
+// Fills nonland deck slots from a shuffled name pool, 1-4 copies each
+// (Magic's usual "up to 4 non-basic copies" limit), until `totalNeeded`
+// slots are filled or the pool runs out (then tops up existing entries
+// toward 4 copies rather than leaving the deck short).
+function buildSpellList(names, totalNeeded) {
+  const shuffled = shuffle(names.slice());
+  const list = [];
+  let total = 0;
+  for (const name of shuffled) {
+    if (total >= totalNeeded) break;
+    const qty = Math.min(totalNeeded - total, 1 + Math.floor(Math.random() * 4));
+    list.push({ name, qty });
+    total += qty;
+  }
+  let i = 0;
+  while (total < totalNeeded && list.length) {
+    const entry = list[i % list.length];
+    if (entry.qty < 4) {
+      entry.qty++;
+      total++;
+    }
+    i++;
+    if (i > list.length * 4 + 20) break; // safety valve — pool truly exhausted
+  }
+  return list;
+}
+
+// A 60-card constructed deck (also used for "casual", which just skips the
+// legality filter): 1-2 random colors, spells from cards legal in that
+// color pair (widening to the whole legal pool if that's too narrow), plus
+// a basic-land manabase for the chosen colors.
+function buildConstructedDeck(format) {
+  const key = format === 'casual' ? null : format;
+  const pool = cardPool(key, "type_line NOT LIKE '%Land%'");
+  if (!pool.length) return null;
+
+  const n = Math.random() < 0.5 ? 1 : 2;
+  const colors = shuffle(ALL_COLORS.slice()).slice(0, n);
+  let candidates = pool.filter((c) => colorsSubsetOf(c.colors, colors));
+  if (candidates.length < 30) candidates = pool; // color pair too narrow for this format's pool — widen instead of failing
+
+  const spells = buildSpellList(candidates.map((c) => c.name), 43);
+  const lands = buildLandList(colors, 17);
+
+  return [...spells, ...lands].map((e) => `${e.qty} ${e.name}`).join('\n');
+}
+
+// A 100-card Commander deck: a random legendary creature legal in
+// Commander, then 99 singleton cards within its color identity (widening
+// past color identity if the pool's too narrow to hit 99), padded out with
+// basics if the spell pool still comes up short.
+function buildCommanderDeck() {
+  const commanderPool = cardPool('commander', "type_line LIKE '%Legendary%' AND type_line LIKE '%Creature%'");
+  if (!commanderPool.length) return null;
+  const commander = commanderPool[Math.floor(Math.random() * commanderPool.length)];
+  let identity;
+  try {
+    identity = JSON.parse(commander.color_identity || '[]') || [];
+  } catch {
+    identity = [];
+  }
+
+  const nonlandPool = cardPool('commander', "type_line NOT LIKE '%Land%'").filter((c) => c.name !== commander.name);
+  let candidates = nonlandPool.filter((c) => colorsSubsetOf(c.color_identity, identity));
+  if (candidates.length < 50) candidates = nonlandPool; // very narrow identity (e.g. mono-color) — widen instead of failing
+
+  const spellNames = shuffle(candidates.map((c) => c.name)).slice(0, 62); // singleton, 1 copy each
+  const lands = buildLandList(identity, Math.max(99 - spellNames.length, 0));
+
+  return [`1 ${commander.name}`, ...spellNames.map((n) => `1 ${n}`), ...lands.map((l) => `${l.qty} ${l.name}`)].join('\n');
+}
+
 io.on('connection', (socket) => {
   let currentCode = null;
   let currentPlayerId = null;
@@ -393,12 +525,19 @@ io.on('connection', (socket) => {
         })),
         pinned: !!r.pinned,
         removeInSeconds,
+        format: r.format,
       };
     });
     cb && cb({ ok: true, tables });
   });
 
-  socket.on('create_room', ({ name, playerId }, cb) => {
+  // Lets the client build its format dropdown from the server's own list,
+  // so the two never drift out of sync.
+  socket.on('list_formats', (payload, cb) => {
+    cb && cb({ ok: true, formats: FORMATS });
+  });
+
+  socket.on('create_room', ({ name, playerId, format }, cb) => {
     const code = makeRoomCode();
     rooms[code] = {
       code,
@@ -408,6 +547,7 @@ io.on('connection', (socket) => {
       log: [],
       pinned: false,
       emptySince: null,
+      format: FORMAT_KEYS.has(format) ? format : 'casual',
     };
     cb && cb({ ok: true, code });
   });
@@ -453,19 +593,31 @@ io.on('connection', (socket) => {
   // offline), live Scryfall API as a fallback for anything not found there
   // (a card released after the snapshot was taken, or no local DB at all).
   // Doesn't need withRoom — this is a stateless lookup, not a room mutation.
-  socket.on('resolve_deck', async ({ names } = {}, cb) => {
+  //
+  // `format`, if given, doesn't block anything — this app doesn't enforce
+  // rules — it just flags names that aren't legal in that format so the
+  // client can show a heads-up warning next to the normal import result.
+  socket.on('resolve_deck', async ({ names, format } = {}, cb) => {
     if (!Array.isArray(names)) {
       cb && cb({ ok: false, error: 'Expected a names array.' });
       return;
     }
+    const checkFormat = FORMAT_KEYS.has(format) && format !== 'casual' ? format : null;
     const resolved = new Map(); // lowercase name -> card data
     const misses = [];
+    const illegal = [];
 
     for (const name of names) {
       if (lookupCardStmt) {
         const row = lookupCardStmt.get(name, name);
         if (row) {
           resolved.set(name.toLowerCase(), dbRowToCard(row));
+          if (checkFormat) {
+            try {
+              const legalities = JSON.parse(row.legalities || '{}');
+              if (legalities[checkFormat] !== 'legal') illegal.push(row.name);
+            } catch {}
+          }
           continue;
         }
       }
@@ -475,11 +627,39 @@ io.on('connection', (socket) => {
     let notFound = [];
     if (misses.length) {
       const { found, notFound: liveNotFound } = await resolveNamesFromLiveScryfall(misses);
-      found.forEach((card, key) => resolved.set(key, scryfallApiCardToCard(card)));
+      found.forEach((card, key) => {
+        resolved.set(key, scryfallApiCardToCard(card));
+        if (checkFormat && card.legalities && card.legalities[checkFormat] !== 'legal') illegal.push(card.name);
+      });
       notFound = liveNotFound;
     }
 
-    cb && cb({ ok: true, resolved: Object.fromEntries(resolved), notFound });
+    cb && cb({ ok: true, resolved: Object.fromEntries(resolved), notFound, illegal });
+  });
+
+  // Builds a random decklist (as plain text, same shape as a pasted
+  // decklist) legal in the given format, pulled from the local card
+  // database. Doesn't touch room state — the client loads the returned
+  // text into the decklist textarea same as it would anything typed by
+  // hand, so Import still goes through the normal resolve_deck/set_library
+  // path.
+  socket.on('generate_random_deck', ({ format } = {}, cb) => {
+    if (!cardDb) {
+      cb && cb({ ok: false, error: 'No local card database — random deck generation needs cards.sqlite.' });
+      return;
+    }
+    const key = FORMAT_KEYS.has(format) ? format : 'casual';
+    try {
+      const decklist = key === 'commander' ? buildCommanderDeck() : buildConstructedDeck(key);
+      if (!decklist) {
+        cb && cb({ ok: false, error: 'Could not find enough legal cards to build a deck for that format.' });
+        return;
+      }
+      cb && cb({ ok: true, decklist, format: key });
+    } catch (err) {
+      console.error('generate_random_deck failed:', err);
+      cb && cb({ ok: false, error: err.message });
+    }
   });
 
   // Official rulings for a card, keyed by oracle_id (shared across every

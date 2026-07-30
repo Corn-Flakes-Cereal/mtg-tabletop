@@ -626,15 +626,37 @@
   const inputName = document.getElementById('input-name');
   const inputCode = document.getElementById('input-code');
   const landingError = document.getElementById('landing-error');
+  const inputFormat = document.getElementById('input-format');
 
   inputName.value = localStorage.getItem('mtg_name') || '';
+
+  // Formats come from the server (see server.js's FORMATS list) so the
+  // dropdown and the legality checks it drives never drift out of sync.
+  let formatLabels = {}; // key -> label, filled in once list_formats resolves
+  socket.emit('list_formats', {}, (res) => {
+    if (!res || !res.ok) return;
+    formatLabels = Object.fromEntries(res.formats.map((f) => [f.key, f.label]));
+    inputFormat.innerHTML = res.formats.map((f) => `<option value="${f.key}">${escapeHtml(f.label)}</option>`).join('');
+    const lastFormat = localStorage.getItem('mtg_format');
+    if (lastFormat && formatLabels[lastFormat]) inputFormat.value = lastFormat;
+    updateFormatLabel();
+  });
+
+  function updateFormatLabel() {
+    const label = document.getElementById('deck-format-label');
+    if (!label) return;
+    const key = latestState ? latestState.format : null;
+    label.textContent = (key && formatLabels[key]) || 'Casual';
+  }
 
   document.getElementById('btn-create').addEventListener('click', () => {
     const name = inputName.value.trim();
     if (!name) return (landingError.textContent = 'Enter your name first.');
-    socket.emit('create_room', { name, playerId }, (res) => {
+    const format = inputFormat.value || 'casual';
+    socket.emit('create_room', { name, playerId, format }, (res) => {
       if (!res.ok) return (landingError.textContent = res.error || 'Could not create table.');
       localStorage.setItem('mtg_name', name);
+      localStorage.setItem('mtg_format', format);
       joinRoom(res.code, name);
     });
   });
@@ -799,10 +821,24 @@
   };
 
   document.getElementById('btn-random-deck').addEventListener('click', () => {
-    const colors = Object.keys(SAMPLE_DECKS);
-    const color = colors[Math.floor(Math.random() * colors.length)];
-    document.getElementById('input-decklist').value = SAMPLE_DECKS[color];
-    document.getElementById('deck-status').textContent = `Loaded a random ${color} sample deck — edit it or hit Import.`;
+    const status = document.getElementById('deck-status');
+    const format = (latestState && latestState.format) || 'casual';
+    status.textContent = 'Building a random legal deck…';
+    socket.emit('generate_random_deck', { format }, (res) => {
+      if (!res || !res.ok) {
+        // Fall back to a static sample deck if there's no local card
+        // database to build a real one from (e.g. a fresh deploy that
+        // hasn't imported cards.sqlite yet).
+        const colors = Object.keys(SAMPLE_DECKS);
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        document.getElementById('input-decklist').value = SAMPLE_DECKS[color];
+        status.textContent = (res && res.error) ? `${res.error} Loaded a random ${color} sample deck instead — edit it or hit Import.` : `Loaded a random ${color} sample deck — edit it or hit Import.`;
+        return;
+      }
+      document.getElementById('input-decklist').value = res.decklist;
+      const label = formatLabels[res.format] || 'Casual';
+      status.textContent = `Loaded a random ${label}-legal deck — edit it or hit Import.`;
+    });
   });
 
   // A deck of nothing but double-faced cards, for testing the Transform
@@ -846,12 +882,14 @@
     }
     status.textContent = 'Looking up cards…';
     try {
-      const { cards, notFound } = await resolveDeck(parsed);
-      if (notFound.length) {
-        status.textContent = `Imported. Could not find: ${notFound.join(', ')}`;
-      } else {
-        status.textContent = `Imported ${cards.length} cards.`;
+      const { cards, notFound, illegal } = await resolveDeck(parsed);
+      const messages = [];
+      messages.push(notFound.length ? `Imported. Could not find: ${notFound.join(', ')}` : `Imported ${cards.length} cards.`);
+      if (illegal.length) {
+        const label = formatLabels[latestState && latestState.format] || 'this format';
+        messages.push(`Not legal in ${label}: ${illegal.join(', ')} (playing anyway — nothing's enforced).`);
       }
+      status.textContent = messages.join(' ');
       socket.emit('set_library', { cards }, (res) => {
         if (res && res.ok) showScreen('table');
       });
@@ -890,8 +928,9 @@
   // here anymore.
   function resolveDeck(nameQtyMap) {
     const names = [...nameQtyMap.keys()];
+    const format = (latestState && latestState.format) || 'casual';
     return new Promise((resolve, reject) => {
-      socket.emit('resolve_deck', { names }, (res) => {
+      socket.emit('resolve_deck', { names, format }, (res) => {
         if (!res || !res.ok) {
           reject(new Error((res && res.error) || 'Card lookup failed.'));
           return;
@@ -906,7 +945,7 @@
           }
           for (let i = 0; i < qty; i++) cards.push(card);
         }
-        resolve({ cards, notFound });
+        resolve({ cards, notFound, illegal: res.illegal || [] });
       });
     });
   }
@@ -929,6 +968,7 @@
 
   socket.on('state', (state) => {
     latestState = state;
+    updateFormatLabel();
     render(state);
   });
 
@@ -1135,6 +1175,7 @@
     if (!you) return;
 
     document.getElementById('table-room-code').textContent = `Table: ${state.code}`;
+    document.getElementById('table-format-label').textContent = formatLabels[state.format] || 'Casual';
 
     const pinBtn = document.getElementById('btn-pin');
     pinBtn.textContent = state.pinned ? '📌 Pinned' : '📌 Keep Table Alive';
