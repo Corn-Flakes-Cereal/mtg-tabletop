@@ -627,18 +627,27 @@
   document.getElementById('btn-refresh-tables').addEventListener('click', refreshTableList);
   refreshTableList();
 
-  // Attempt silent auto-rejoin if we have a stored session (e.g. page refresh mid-game).
-  (function tryAutoRejoin() {
-    const lastCode = localStorage.getItem('mtg_code');
-    const lastName = localStorage.getItem('mtg_name');
-    if (!lastCode || !lastName) return;
-    socket.emit('join_room', { code: lastCode, name: lastName, playerId }, (res) => {
+  // Attempt silent auto-rejoin if we have a stored session — both on the
+  // very first connection (e.g. page refresh mid-game) AND on every
+  // reconnect. Socket.IO's client auto-reconnects after a dropped
+  // connection (WiFi blip, laptop sleep, a backgrounded tab getting
+  // throttled), but each reconnect gets a brand-new socket on the server
+  // with no memory of which room/player it was — without re-emitting
+  // join_room here, the page would keep rendering whatever state it last
+  // received and silently stop updating, with no visible error, until the
+  // user manually refreshes. Binding this to 'connect' (which fires for
+  // both cases) instead of running once at script load closes that gap.
+  socket.on('connect', () => {
+    const code = currentCode || localStorage.getItem('mtg_code');
+    const name = inputName.value.trim() || localStorage.getItem('mtg_name');
+    if (!code || !name) return;
+    socket.emit('join_room', { code, name, playerId }, (res) => {
       if (res && res.ok) {
         currentCode = res.code;
         showScreen('table');
       }
     });
-  })();
+  });
 
   // -------------------------------------------------------------------------
   // Deck import screen

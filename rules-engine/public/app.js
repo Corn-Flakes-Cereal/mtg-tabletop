@@ -169,11 +169,21 @@
     gameLog.innerHTML = state.log.map((e) => `<div class="entry"><span class="ts">${new Date(e.ts).toLocaleTimeString()}</span>${escapeHtml(e.text)}</div>`).join('');
   }
 
-  // Rejoin automatically if we were already at a table (page refresh).
-  const savedCode = localStorage.getItem('mtg_rules_code');
-  if (savedCode && inputName.value.trim()) {
-    joinOrCreate(savedCode);
-  } else {
+  if (!localStorage.getItem('mtg_rules_code')) {
     showScreen('landing');
   }
+
+  // Rejoin automatically whenever the socket (re)connects — both the very
+  // first connection (e.g. page refresh mid-game) and any reconnect after a
+  // dropped connection (WiFi blip, laptop sleep, a backgrounded tab getting
+  // throttled). Socket.IO's client auto-reconnects the transport, but each
+  // reconnect gets a brand-new socket on the server with no memory of which
+  // room/player it was — without re-emitting join_room here, the page would
+  // silently stop receiving 'state' updates until manually refreshed. (Same
+  // fix as the bookkeeping app's app.js — found via a live two-tab test
+  // against the deployed server, where a backgrounded tab went stale.)
+  socket.on('connect', () => {
+    const savedCode = localStorage.getItem('mtg_rules_code');
+    if (savedCode) joinOrCreate(savedCode);
+  });
 })();
