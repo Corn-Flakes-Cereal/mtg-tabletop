@@ -371,8 +371,9 @@
 
   // Builds one card as a Konva.Group: art (or a face-down/token placeholder),
   // counter badges, tap rotation, and click/dblclick/tap/dbltap/contextmenu
-  // handling equivalent to the old DOM version. Only your own cards drag —
-  // anyone can still tap or right-click any card, same as before.
+  // handling equivalent to the old DOM version. Only your own cards drag or
+  // tap — anyone can still right-click any card for other bookkeeping
+  // actions (counters, transform, moving zones), same as before.
   //
   // Card nodes are persistent across renders (see renderBattlefieldLayer
   // below) — built once per card uid, then patched in place. That's why the
@@ -483,6 +484,7 @@
         clearTimeout(clickTimer);
         clickTimer = null;
       }
+      if (!isSelf) return; // only your own cards can be tapped
       socket.emit('tap_card', { ownerId, uid: card.uid });
     });
     group.on('contextmenu', (e) => {
@@ -676,7 +678,15 @@
         const names = t.players.length
           ? t.players.map((p) => p.name + (p.connected ? '' : ' (off)')).join(', ')
           : 'empty';
-        row.innerHTML = `<span class="code">${escapeHtml(t.code)}</span><span class="names">${escapeHtml(names)}</span>`;
+        let status = '';
+        if (t.pinned) {
+          status = '📌 pinned';
+        } else if (t.removeInSeconds != null) {
+          const m = Math.floor(t.removeInSeconds / 60);
+          const s = t.removeInSeconds % 60;
+          status = `removed in ${m}m ${s}s`;
+        }
+        row.innerHTML = `<span class="code">${escapeHtml(t.code)}</span><span class="names">${escapeHtml(names)}</span><span class="table-status">${escapeHtml(status)}</span>`;
         row.addEventListener('click', () => {
           const name = inputName.value.trim();
           if (!name) {
@@ -692,6 +702,7 @@
   }
   document.getElementById('btn-refresh-tables').addEventListener('click', refreshTableList);
   refreshTableList();
+  setInterval(refreshTableList, 10000); // keep the removal countdown roughly live
 
   // Attempt silent auto-rejoin if we have a stored session — both on the
   // very first connection (e.g. page refresh mid-game) AND on every
@@ -1125,6 +1136,10 @@
 
     document.getElementById('table-room-code').textContent = `Table: ${state.code}`;
 
+    const pinBtn = document.getElementById('btn-pin');
+    pinBtn.textContent = state.pinned ? '📌 Pinned' : '📌 Keep Table Alive';
+    pinBtn.classList.toggle('active', !!state.pinned);
+
     // --- self stats ---
     document.getElementById('self-life').textContent = you.life;
     document.getElementById('self-poison').textContent = you.poison;
@@ -1423,7 +1438,9 @@
     }
 
     if (zone === 'battlefield') {
-      contextMenu.appendChild(menuItem(card.tapped ? 'Untap' : 'Tap', () => socket.emit('tap_card', { ownerId, uid })));
+      if (ownerId === playerId) {
+        contextMenu.appendChild(menuItem(card.tapped ? 'Untap' : 'Tap', () => socket.emit('tap_card', { ownerId, uid })));
+      }
       contextMenu.appendChild(menuItem(card.faceDown ? 'Turn face up' : 'Turn face down', () =>
         socket.emit('move_card', { uid, ownerId, fromZone: zone, toZone: zone, faceDown: !card.faceDown })
       ));
@@ -1454,6 +1471,15 @@
     contextMenu.style.top = `${y}px`;
     contextMenu.classList.remove('hidden');
   }
+
+  // -------------------------------------------------------------------------
+  // Pin table (keep alive indefinitely, bypassing the 15-min empty timeout)
+  // -------------------------------------------------------------------------
+  document.getElementById('btn-pin').addEventListener('click', () => {
+    socket.emit('pin_table', {}, (res) => {
+      if (res && !res.ok) alert(res.error);
+    });
+  });
 
   // -------------------------------------------------------------------------
   // Leave table

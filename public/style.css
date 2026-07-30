@@ -80,7 +80,10 @@ textarea { resize: vertical; font-family: monospace; }
 .table-list-item:hover { background: #1c2129; border-color: #8957e5; }
 .table-list-item .code { font-family: monospace; letter-spacing: 2px; font-weight: 700; }
 .table-list-item .names { color: #8b949e; font-size: 12px; text-align: right; }
+.table-list-item .table-status { color: #d29922; font-size: 11px; white-space: nowrap; }
 .table-list-empty { color: #8b949e; font-size: 13px; }
+
+#btn-pin.active { background: #d29922; border-color: #d29922; color: #0d1117; font-weight: 600; }
 
 /* ---------- Table layout ---------- */
 #screen-table.screen { padding: 0; align-items: stretch; position: relative; }

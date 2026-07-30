@@ -239,9 +239,29 @@ async function resolveNamesFromLiveScryfall(names) {
 //   playerOrder: [playerId, ...],
 //   sockets: { [playerId]: socketId },   // current live socket for a player
 //   log: [{ id, text, ts }],
+//   pinned: false,      // true = "keep this table alive" was pressed, never auto-expires
+//   emptySince: null,   // timestamp when the last connected player left, or null if someone's connected
 // }
 
 const rooms = {};
+
+// How long an unpinned, fully-disconnected table sticks around before its
+// state is wiped, and how often we sweep for expired ones.
+const EMPTY_ROOM_TIMEOUT_MS = 15 * 60 * 1000;
+const ROOM_SWEEP_INTERVAL_MS = 30 * 1000;
+
+function isRoomEmpty(room) {
+  return room.playerOrder.every((pid) => !room.players[pid]?.connected);
+}
+
+// Call after any disconnect/leave — starts (or leaves running) the empty-room
+// clock. Only actually starts the clock the first time the room goes empty,
+// so a second player leaving right after the first doesn't reset the timer.
+function markEmptyIfNeeded(room) {
+  if (isRoomEmpty(room) && room.emptySince == null) {
+    room.emptySince = Date.now();
+  }
+}
 
 const ZONES = ['library', 'hand', 'battlefield', 'graveyard', 'exile'];
 
@@ -330,6 +350,7 @@ function viewFor(room, viewerId) {
     players,
     log: room.log.slice(-100),
     you: viewerId,
+    pinned: !!room.pinned,
   };
 }
 
@@ -360,13 +381,20 @@ io.on('connection', (socket) => {
   // quick-join without typing a code. Not meant to ship in a public deploy
   // (it leaks table codes/player names to anyone connected).
   socket.on('list_tables', (payload, cb) => {
-    const tables = Object.values(rooms).map((r) => ({
-      code: r.code,
-      players: r.playerOrder.map((pid) => ({
-        name: r.players[pid]?.name || '?',
-        connected: !!r.players[pid]?.connected,
-      })),
-    }));
+    const tables = Object.values(rooms).map((r) => {
+      const removeInSeconds = !r.pinned && r.emptySince != null
+        ? Math.max(0, Math.ceil((EMPTY_ROOM_TIMEOUT_MS - (Date.now() - r.emptySince)) / 1000))
+        : null;
+      return {
+        code: r.code,
+        players: r.playerOrder.map((pid) => ({
+          name: r.players[pid]?.name || '?',
+          connected: !!r.players[pid]?.connected,
+        })),
+        pinned: !!r.pinned,
+        removeInSeconds,
+      };
+    });
     cb && cb({ ok: true, tables });
   });
 
@@ -378,6 +406,8 @@ io.on('connection', (socket) => {
       playerOrder: [],
       sockets: {},
       log: [],
+      pinned: false,
+      emptySince: null,
     };
     cb && cb({ ok: true, code });
   });
@@ -402,10 +432,21 @@ io.on('connection', (socket) => {
       log(room, `${room.players[playerId].name} reconnected.`);
     }
     room.sockets[playerId] = socket.id;
+    room.emptySince = null; // someone's here again — cancel any pending expiry
 
     cb && cb({ ok: true, code: room.code, playerId });
     broadcastRoom(room.code);
   });
+
+  // Toggle "keep this table alive indefinitely" — exempts the room from the
+  // empty-table timeout below no matter how long everyone's disconnected.
+  socket.on(
+    'pin_table',
+    withRoom((room) => {
+      room.pinned = !room.pinned;
+      log(room, `Table ${room.pinned ? 'pinned — will stay open indefinitely.' : 'unpinned.'}`);
+    })
+  );
 
   // Resolves a decklist's card names into full card data (name/image/mana
   // cost/type/power/toughness) — local SQLite snapshot first (instant,
@@ -606,8 +647,12 @@ io.on('connection', (socket) => {
   socket.on(
     'tap_card',
     withRoom((room, player, { ownerId, uid }) => {
-      const owner = room.players[ownerId] || player;
-      const card = owner.battlefield.find((c) => c.uid === uid);
+      // Unlike most bookkeeping actions here, tapping is restricted to your
+      // own cards — tap state tracks whether *you've* used a permanent, so
+      // letting another player toggle it either hides real information from
+      // you or fakes an action you never took.
+      if (ownerId && ownerId !== currentPlayerId) return;
+      const card = player.battlefield.find((c) => c.uid === uid);
       if (card) card.tapped = !card.tapped;
     })
   );
@@ -708,6 +753,7 @@ io.on('connection', (socket) => {
         room.players[currentPlayerId].connected = false;
         log(room, `${room.players[currentPlayerId].name} left the table.`);
         if (room.sockets[currentPlayerId] === socket.id) delete room.sockets[currentPlayerId];
+        markEmptyIfNeeded(room);
         broadcastRoom(room.code);
       }
       socket.leave(currentCode);
@@ -722,11 +768,25 @@ io.on('connection', (socket) => {
       if (room && room.players[currentPlayerId]) {
         room.players[currentPlayerId].connected = false;
         log(room, `${room.players[currentPlayerId].name} disconnected.`);
+        markEmptyIfNeeded(room);
         broadcastRoom(room.code);
       }
     }
   });
 });
+
+// Periodic sweep: wipe any unpinned table that's been fully disconnected for
+// longer than EMPTY_ROOM_TIMEOUT_MS. Pinned tables are exempt no matter how
+// long they sit empty.
+setInterval(() => {
+  const now = Date.now();
+  for (const code of Object.keys(rooms)) {
+    const room = rooms[code];
+    if (!room.pinned && room.emptySince != null && now - room.emptySince >= EMPTY_ROOM_TIMEOUT_MS) {
+      delete rooms[code];
+    }
+  }
+}, ROOM_SWEEP_INTERVAL_MS);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
