@@ -52,7 +52,7 @@
   // dropped). Whichever axis has the bigger offset from the neighbor decides
   // whether it snaps into a row (side-by-side) or a column (stacked).
   const SNAP_RADIUS = 150;
-  const SNAP_GAP = 8;
+  const SNAP_GAP = 4;
 
   function clampToBoard(x, y) {
     return {
@@ -61,11 +61,21 @@
     };
   }
 
+  // A tapped card is rotated 90° in place, so its visual footprint has width
+  // and height swapped from its resting size — snapping needs each card's
+  // ACTUAL on-screen footprint, not always the untapped one, or a tapped
+  // neighbor's card would visually overlap the one snapped next to it.
+  function effectiveSize(tapped) {
+    return tapped ? { w: CARD_H, h: CARD_W } : { w: CARD_W, h: CARD_H };
+  }
+
   // ownerId/draggedUid identify whose battlefield to check and which card to
-  // exclude (a card never snaps to itself). Reads sibling positions straight
-  // out of latestState rather than needing them passed in, since every drop
-  // path already has access to that.
-  function snapPosition(ownerId, draggedUid, x, y) {
+  // exclude (a card never snaps to itself). draggedTapped is the tapped
+  // state of the card being placed (hand cards are always untapped, so that
+  // call site can omit it). Reads sibling positions straight out of
+  // latestState rather than needing them passed in, since every drop path
+  // already has access to that.
+  function snapPosition(ownerId, draggedUid, x, y, draggedTapped = false) {
     const owner = latestState && latestState.players[ownerId];
     const siblings = owner ? owner.battlefield.filter((c) => c.uid !== draggedUid) : [];
 
@@ -84,9 +94,15 @@
     if (!nearest) return clampToBoard(x, y);
 
     const { c, dx, dy } = nearest;
+    const draggedSize = effectiveSize(draggedTapped);
+    const neighborSize = effectiveSize(!!c.tapped);
+    // Offset between the two centers = half the neighbor's footprint + gap +
+    // half the dragged card's footprint, along whichever axis they're lining
+    // up on — using each card's real (possibly rotated) size, not always the
+    // untapped one.
     const snapped = Math.abs(dx) >= Math.abs(dy)
-      ? { x: c.x + (dx >= 0 ? 1 : -1) * (CARD_W + SNAP_GAP), y: c.y } // side-by-side row
-      : { x: c.x, y: c.y + (dy >= 0 ? 1 : -1) * (CARD_H + SNAP_GAP) }; // stacked column
+      ? { x: c.x + (dx >= 0 ? 1 : -1) * (neighborSize.w / 2 + SNAP_GAP + draggedSize.w / 2), y: c.y } // side-by-side row
+      : { x: c.x, y: c.y + (dy >= 0 ? 1 : -1) * (neighborSize.h / 2 + SNAP_GAP + draggedSize.h / 2) }; // stacked column
     return clampToBoard(snapped.x, snapped.y);
   }
 
@@ -476,7 +492,12 @@
 
     if (isSelf) {
       group.on('dragend', () => {
-        const { x, y } = snapPosition(ownerId, card.uid, group.x(), group.y());
+        // group.getAttr('cardData') rather than the closure's `card` — this
+        // handler is set up once when the node is first created, but the
+        // node is patched in place on later renders, so the closure's `card`
+        // can be stale (e.g. tapped after creation, then dragged).
+        const isTapped = !!group.getAttr('cardData').tapped;
+        const { x, y } = snapPosition(ownerId, card.uid, group.x(), group.y(), isTapped);
         group.position({ x, y });
         socket.emit('move_card', { uid: card.uid, ownerId, fromZone: 'battlefield', toZone: 'battlefield', x, y });
       });
