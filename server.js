@@ -570,7 +570,12 @@ io.on('connection', (socket) => {
       const idx = findCard(fromArr, uid);
       if (idx === -1) return;
       const [card] = fromArr.splice(idx, 1);
-      card.tapped = false;
+      // Untap on a genuine zone change (leaving/entering a zone resets tap
+      // status, same as real Magic) — but NOT when fromZone === toZone,
+      // which covers repositioning a card on the same battlefield (dragging
+      // it around) and the "turn face up/down" context-menu action. Neither
+      // of those should untap a card that was deliberately tapped.
+      if (fromZone !== toZone) card.tapped = false;
       if (typeof faceDown === 'boolean') card.faceDown = faceDown;
       if (toZone === 'battlefield') {
         // Preserve the card's existing position if the client didn't send new
