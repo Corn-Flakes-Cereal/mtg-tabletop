@@ -44,6 +44,52 @@
   // Half of the card's longer edge — used to keep a card's full footprint
   // inside the board in either orientation (tapping rotates it 90°).
   const CARD_FIT_MARGIN = 63;
+
+  // Snapping: dropping a card within SNAP_RADIUS of another card on the same
+  // battlefield lines it up neatly next to that card instead of leaving it
+  // wherever it was released — keeps the board tidy without forcing a rigid
+  // global grid (cards far from anything else still land exactly where
+  // dropped). Whichever axis has the bigger offset from the neighbor decides
+  // whether it snaps into a row (side-by-side) or a column (stacked).
+  const SNAP_RADIUS = 150;
+  const SNAP_GAP = 8;
+
+  function clampToBoard(x, y) {
+    return {
+      x: Math.max(CARD_FIT_MARGIN, Math.min(BOARD_W - CARD_FIT_MARGIN, x)),
+      y: Math.max(CARD_FIT_MARGIN, Math.min(BOARD_H - CARD_FIT_MARGIN, y)),
+    };
+  }
+
+  // ownerId/draggedUid identify whose battlefield to check and which card to
+  // exclude (a card never snaps to itself). Reads sibling positions straight
+  // out of latestState rather than needing them passed in, since every drop
+  // path already has access to that.
+  function snapPosition(ownerId, draggedUid, x, y) {
+    const owner = latestState && latestState.players[ownerId];
+    const siblings = owner ? owner.battlefield.filter((c) => c.uid !== draggedUid) : [];
+
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const c of siblings) {
+      const dx = x - c.x;
+      const dy = y - c.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= SNAP_RADIUS && dist < nearestDist) {
+        nearestDist = dist;
+        nearest = { c, dx, dy };
+      }
+    }
+
+    if (!nearest) return clampToBoard(x, y);
+
+    const { c, dx, dy } = nearest;
+    const snapped = Math.abs(dx) >= Math.abs(dy)
+      ? { x: c.x + (dx >= 0 ? 1 : -1) * (CARD_W + SNAP_GAP), y: c.y } // side-by-side row
+      : { x: c.x, y: c.y + (dy >= 0 ? 1 : -1) * (CARD_H + SNAP_GAP) }; // stacked column
+    return clampToBoard(snapped.x, snapped.y);
+  }
+
   const ZOOM_MIN = 0.5;
   const ZOOM_MAX = 2;
 
@@ -430,8 +476,7 @@
 
     if (isSelf) {
       group.on('dragend', () => {
-        const x = Math.max(CARD_FIT_MARGIN, Math.min(BOARD_W - CARD_FIT_MARGIN, group.x()));
-        const y = Math.max(CARD_FIT_MARGIN, Math.min(BOARD_H - CARD_FIT_MARGIN, group.y()));
+        const { x, y } = snapPosition(ownerId, card.uid, group.x(), group.y());
         group.position({ x, y });
         socket.emit('move_card', { uid: card.uid, ownerId, fromZone: 'battlefield', toZone: 'battlefield', x, y });
       });
@@ -1164,8 +1209,9 @@
           const scale = meta.stage.scaleX();
           const localX = (e.clientX - rect.left - meta.stage.x()) / scale;
           const localY = (e.clientY - rect.top - meta.stage.y()) / scale;
-          payload.x = Math.max(CARD_FIT_MARGIN, Math.min(BOARD_W - CARD_FIT_MARGIN, localX));
-          payload.y = Math.max(CARD_FIT_MARGIN, Math.min(BOARD_H - CARD_FIT_MARGIN, localY));
+          const snapped = snapPosition(payload.ownerId, payload.uid, localX, localY);
+          payload.x = snapped.x;
+          payload.y = snapped.y;
         } else {
           payload.x = BOARD_W / 2;
           payload.y = BOARD_H / 2;

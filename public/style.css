@@ -227,7 +227,15 @@ textarea { resize: vertical; font-family: monospace; }
   display: flex;
   gap: 6px;
   padding: 8px 12px 12px;
-  min-height: 130px;
+  /* Matches card height (126px) + vertical padding (8+12=20px) exactly, so
+     the hand's rendered height doesn't change the moment it goes from empty
+     to holding a card. #self-hand is an "auto"-sized grid row sharing the
+     viewport with the "1fr" battlefield rows above it — if this row's actual
+     height ever changes (e.g. right when you draw your first card), the
+     battlefield/toolbar rows shrink to compensate and everything above
+     visibly shifts up. Fixing this to the actual content height up front
+     means drawing a card never changes it. */
+  min-height: 146px;
   overflow-x: auto;
   align-items: flex-end;
 }
