@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MTG Tabletop</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ===================== LANDING SCREEN ===================== -->
+<section id="screen-landing" class="screen">
+  <div class="card-panel landing-panel">
+    <h1>🂠 MTG Tabletop</h1>
+    <p class="subtle">A bookkeeping table for playing regular Magic with friends. No rules enforcement — you still call your own plays.</p>
+
+    <label>Your name</label>
+    <input id="input-name" type="text" placeholder="e.g. Mike" maxlength="24" />
+
+    <div class="landing-actions">
+      <div class="landing-col">
+        <button id="btn-create" class="btn primary">Create Table</button>
+      </div>
+      <div class="landing-col">
+        <input id="input-code" type="text" placeholder="TABLE CODE" maxlength="5" style="text-transform:uppercase" />
+        <button id="btn-join" class="btn">Join Table</button>
+      </div>
+    </div>
+    <p id="landing-error" class="error"></p>
+
+    <div id="dev-quick-join" class="dev-quick-join">
+      <div class="dev-quick-join-header">
+        <span class="subtle">DEV ONLY — Quick Join</span>
+        <button id="btn-refresh-tables" class="btn tiny">Refresh</button>
+      </div>
+      <div id="table-list" class="table-list"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== DECK IMPORT SCREEN ===================== -->
+<section id="screen-deck" class="screen hidden">
+  <div class="card-panel">
+    <h2>Table code: <span id="deck-room-code" class="room-code"></span> <button id="btn-copy-code" class="btn tiny">copy</button></h2>
+    <p class="subtle">Share this code with your friends so they can join. Paste your decklist below (one card per line, e.g. <code>4 Lightning Bolt</code>), or grab a random sample deck to skip typing one out.</p>
+    <div class="random-deck-row">
+      <button id="btn-random-deck" class="btn tiny">🎲 Random Sample Deck</button>
+      <button id="btn-transform-deck" class="btn tiny">🔄 Transform Test Deck</button>
+    </div>
+    <textarea id="input-decklist" rows="12" placeholder="4 Lightning Bolt&#10;1 Sol Ring&#10;23 Mountain&#10;..."></textarea>
+    <div class="deck-actions">
+      <button id="btn-import" class="btn primary">Import Deck &amp; Sit Down</button>
+      <button id="btn-skip-deck" class="btn">Skip (tokens only)</button>
+    </div>
+    <p id="deck-status" class="subtle"></p>
+  </div>
+</section>
+
+<!-- ===================== TABLE SCREEN ===================== -->
+<section id="screen-table" class="screen hidden">
+  <div id="table-topbar">
+    <span id="table-room-code"></span>
+    <button id="btn-leave" class="btn tiny">Leave Table</button>
+  </div>
+  <div id="table-layout">
+    <div id="opponents-area"></div>
+
+    <div id="self-area">
+      <div id="self-battlefield" class="battlefield dropzone" data-zone="battlefield">
+        <div class="zoom-control">
+          <span class="zoom-icon">−</span>
+          <input id="self-zoom-slider" type="range" min="0.5" max="2" step="0.05" value="1" />
+          <span class="zoom-icon">+</span>
+          <span id="self-zoom-label" class="zoom-label">100%</span>
+        </div>
+      </div>
+
+      <div id="self-toolbar">
+        <div class="pile-group">
+          <div id="pile-library" class="pile dropzone" data-zone="library" title="Library — click to draw 1">
+            <div class="pile-label">Library</div>
+            <div class="pile-count" id="library-count">0</div>
+          </div>
+          <div class="pile-buttons">
+            <button id="btn-draw1" class="btn tiny">Draw 1</button>
+            <button id="btn-shuffle" class="btn tiny">Shuffle</button>
+            <button id="btn-mulligan" class="btn tiny">Mulligan→7</button>
+          </div>
+        </div>
+
+        <div class="pile-group">
+          <div id="pile-graveyard" class="pile dropzone" data-zone="graveyard" title="Graveyard">
+            <div class="pile-label">Graveyard</div>
+            <div class="pile-count" id="graveyard-count">0</div>
+          </div>
+        </div>
+
+        <div class="pile-group">
+          <div id="pile-exile" class="pile dropzone" data-zone="exile" title="Exile">
+            <div class="pile-label">Exile</div>
+            <div class="pile-count" id="exile-count">0</div>
+          </div>
+        </div>
+
+        <div class="pile-group life-group">
+          <div class="life-controls">
+            <button class="btn tiny" data-life="-1">−</button>
+            <div class="life-total" id="self-life">20</div>
+            <button class="btn tiny" data-life="1">+</button>
+          </div>
+          <div class="poison-controls">
+            <button class="btn tiny" data-poison="-1">−</button>
+            <span id="self-poison">0</span> poison
+            <button class="btn tiny" data-poison="1">+</button>
+          </div>
+        </div>
+
+        <div class="pile-group">
+          <button id="btn-token" class="btn">+ Token</button>
+        </div>
+      </div>
+
+      <div id="self-hand" class="hand dropzone" data-zone="hand"></div>
+    </div>
+
+    <div id="chat-area">
+      <div id="chat-log"></div>
+      <form id="chat-form">
+        <input id="chat-input" type="text" placeholder="Say something…" autocomplete="off" />
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CARD PREVIEW ===================== -->
+<div id="card-preview-overlay" class="preview-overlay hidden">
+  <img id="card-preview-img" class="preview-img hidden" />
+  <div id="card-preview-fallback" class="preview-fallback hidden"></div>
+  <div id="card-preview-both" class="preview-both hidden">
+    <img id="card-preview-front-img" class="preview-img" />
+    <img id="card-preview-back-img" class="preview-img" />
+  </div>
+  <div id="card-preview-rulings" class="preview-rulings hidden">
+    <button id="card-preview-rulings-btn" class="btn tiny">View Rulings</button>
+    <div id="card-preview-rulings-list" class="rulings-list hidden"></div>
+  </div>
+  <div id="card-preview-actions" class="preview-actions hidden"></div>
+</div>
+
+<!-- ===================== CONTEXT MENU ===================== -->
+<div id="context-menu" class="hidden"></div>
+
+<!-- ===================== TOKEN MODAL ===================== -->
+<div id="token-modal" class="modal hidden">
+  <div class="modal-content">
+    <h3>Create Token</h3>
+    <label>Name</label>
+    <input id="token-name" type="text" placeholder="Soldier" />
+    <label>Power / Toughness (leave blank if none)</label>
+    <div class="pt-row">
+      <input id="token-power" type="text" placeholder="P" style="width:60px" />
+      <span>/</span>
+      <input id="token-toughness" type="text" placeholder="T" style="width:60px" />
+    </div>
+    <label>Color / type note</label>
+    <input id="token-color" type="text" placeholder="e.g. White, Zombie" />
+    <div class="modal-actions">
+      <button id="token-cancel" class="btn">Cancel</button>
+      <button id="token-create" class="btn primary">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== PILE VIEWER MODAL ===================== -->
+<div id="pile-modal" class="modal hidden">
+  <div class="modal-content pile-modal-content">
+    <h3 id="pile-modal-title">Graveyard</h3>
+    <div id="pile-modal-list" class="pile-modal-list"></div>
+    <div class="modal-actions">
+      <button id="pile-modal-close" class="btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://unpkg.com/konva@9/konva.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "mtg-tabletop",
+  "version": "1.0.0",
+  "description": "A simple online tabletop for playing regular Magic: The Gathering with friends. Handles zones, life totals, tokens, and card sync via Scryfall - you and your friends still call the rules yourselves.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node boot.js",
+    "import-cards": "node scripts/import-cards.js",
+    "import-rulings": "node scripts/import-rulings.js",
+    "prewarm-art": "node scripts/prewarm-card-art.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "nanoid": "^3.3.7",
+    "socket.io": "^4.7.5"
+  }
+}

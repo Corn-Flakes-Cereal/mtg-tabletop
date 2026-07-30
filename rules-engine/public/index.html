@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MTG Rules Engine (experimental)</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ===================== LANDING SCREEN ===================== -->
+<section id="screen-landing" class="screen">
+  <div class="card-panel landing-panel">
+    <h1>⚙️ MTG Rules Engine</h1>
+    <p class="subtle">Experimental second app — automates turn structure and priority passing only. No cards, no zones, no effects: just phases, whose turn it is, and the stack.</p>
+
+    <label>Your name</label>
+    <input id="input-name" type="text" placeholder="e.g. Mike" maxlength="24" />
+
+    <div class="landing-actions">
+      <div class="landing-col">
+        <button id="btn-create" class="btn primary">Create Table</button>
+      </div>
+      <div class="landing-col">
+        <input id="input-code" type="text" placeholder="TABLE CODE" maxlength="5" style="text-transform:uppercase" />
+        <button id="btn-join" class="btn">Join Table</button>
+      </div>
+    </div>
+    <p id="landing-error" class="error"></p>
+  </div>
+</section>
+
+<!-- ===================== TABLE SCREEN ===================== -->
+<section id="screen-table" class="screen hidden">
+  <div id="table-topbar">
+    <span id="table-room-code"></span>
+    <button id="btn-leave" class="btn tiny">Leave Table</button>
+  </div>
+
+  <div id="table-layout">
+    <div class="card-panel">
+      <div id="player-list"></div>
+      <button id="btn-start" class="btn primary hidden">Start Game</button>
+    </div>
+
+    <div class="card-panel" id="turn-panel">
+      <div id="turn-header">
+        <span id="turn-number"></span>
+        <span id="step-label" class="step-label"></span>
+      </div>
+      <div id="priority-indicator" class="subtle"></div>
+
+      <div class="actions-row">
+        <button id="btn-pass" class="btn primary" disabled>Pass Priority</button>
+        <input id="input-stack-label" type="text" placeholder="Describe what you're putting on the stack…" disabled />
+        <button id="btn-add-stack" class="btn" disabled>Add to Stack</button>
+      </div>
+
+      <h3>Stack <span class="subtle">(top first)</span></h3>
+      <div id="stack-list" class="stack-list"></div>
+    </div>
+
+    <div class="card-panel" id="log-panel">
+      <h3>Log</h3>
+      <div id="game-log"></div>
+    </div>
+  </div>
+</section>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

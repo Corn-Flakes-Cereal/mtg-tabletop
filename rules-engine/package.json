@@ -1,0 +1,26 @@
+{
+  "name": "mtg-rules-engine",
+  "version": "0.1.0",
+  "description": "Experimental second app: MTG turn structure + priority passing, automated. A separate codebase from the bookkeeping app one level up — this one starts enforcing real game-flow rules instead of just tracking state. Written in TypeScript so the engine's state machine (and, later, card-effect modeling) gets real compile-time checking instead of plain-JS duck typing.",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "nanoid": "^3.3.7",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  }
+}

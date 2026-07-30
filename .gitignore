@@ -1,0 +1,9 @@
+node_modules/
+
+# Generated/cache artifacts — rebuildable, not source:
+cards.sqlite
+card-art-cache/
+
+# Scryfall bulk-data downloads (can be multiple GB) — not meant to be committed.
+*.jsonl
+all-cards-*.json
