@@ -28,6 +28,29 @@ const { DatabaseSync } = require('node:sqlite');
 const PROJECT_ROOT = path.join(__dirname, '..');
 const DB_PATH = path.join(PROJECT_ROOT, 'cards.sqlite');
 
+// Scryfall's bulk data includes a bunch of "cards" that were never meant to
+// go in a deck — Art Series cards, tokens, emblems, and supplemental pieces
+// from Vanguard/Planechase/Archenemy. Worse, Art Series cards are stored
+// with a self-referential double-faced name like "Lightning Strike //
+// Lightning Strike", which collided with the LIKE-based lookup meant for
+// genuine double-faced cards (e.g. "Delver of Secrets // Insectile
+// Aberration") — a real, recently-printed Art Series card could outrank the
+// actual playable printing by release date and get served into a deck
+// instead of it. Excluding these layouts at import time is the fix: they're
+// never legitimate deck contents, so there's no reason for them to be
+// resolvable by name at all.
+const EXCLUDED_LAYOUTS = new Set([
+  'art_series',
+  'token',
+  'double_faced_token',
+  'emblem',
+  'vanguard',
+  'scheme',
+  'planar',
+  'host',
+  'augment',
+]);
+
 // --append: skip wiping/recreating the DB, just open the existing one and
 // insert more rows into it. Used to import a huge bulk file in pieces
 // (see chunked-import.sh) when a single pass would run long enough to hit
@@ -155,6 +178,7 @@ async function main() {
       continue; // skip any malformed line rather than aborting the whole import
     }
     if (card.object !== 'card' || card.lang !== 'en') continue;
+    if (EXCLUDED_LAYOUTS.has(card.layout)) continue;
 
     const face0 = card.card_faces && card.card_faces[0];
     const face1 = card.card_faces && card.card_faces[1];
