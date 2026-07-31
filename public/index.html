@@ -91,6 +91,7 @@
             <button id="btn-draw1" class="btn tiny">Draw 1</button>
             <button id="btn-shuffle" class="btn tiny">Shuffle</button>
             <button id="btn-mulligan" class="btn tiny">Mulligan→7</button>
+            <button id="btn-keep-hand" class="btn tiny warn hidden">Keep Hand</button>
           </div>
         </div>
 
@@ -184,6 +185,19 @@
     <div id="pile-modal-list" class="pile-modal-list"></div>
     <div class="modal-actions">
       <button id="pile-modal-close" class="btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MULLIGAN MODAL ===================== -->
+<div id="mulligan-modal" class="modal hidden">
+  <div class="modal-content pile-modal-content">
+    <h3>Put cards on the bottom</h3>
+    <p id="mulligan-modal-sub" class="subtle"></p>
+    <div id="mulligan-modal-list" class="pile-modal-list"></div>
+    <div class="modal-actions">
+      <button id="mulligan-modal-cancel" class="btn">Cancel</button>
+      <button id="mulligan-modal-confirm" class="btn primary" disabled>Confirm</button>
     </div>
   </div>
 </div>

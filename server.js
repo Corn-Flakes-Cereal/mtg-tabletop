@@ -283,6 +283,12 @@ function newPlayerState(name) {
     graveyard: [],
     exile: [],
     connected: true,
+    // London mulligan bookkeeping (see mulligan_hand/keep_hand below):
+    // mulliganCount is the running total of mulligans taken this game;
+    // pendingBottom is how many cards are still owed to the bottom of the
+    // library before the current hand is considered kept.
+    mulliganCount: 0,
+    pendingBottom: 0,
   };
 }
 
@@ -340,6 +346,8 @@ function viewFor(room, viewerId) {
       exile: p.exile, // public zone in real MTG
       hand: isSelf ? p.hand : new Array(p.hand.length).fill(null),
       handCount: p.hand.length,
+      mulliganCount: p.mulliganCount || 0,
+      pendingBottom: p.pendingBottom || 0,
       library: isSelf ? p.library : [],
       libraryCount: p.library.length,
     };
@@ -741,6 +749,8 @@ io.on('connection', (socket) => {
       player.battlefield = [];
       player.graveyard = [];
       player.exile = [];
+      player.mulliganCount = 0;
+      player.pendingBottom = 0;
       log(room, `${player.name} loaded a ${player.library.length}-card deck.`);
     })
   );
@@ -768,6 +778,10 @@ io.on('connection', (socket) => {
     })
   );
 
+  // London mulligan: shuffle the current hand back in and draw a fresh 7
+  // every time (hand size never shrinks up front) — but each mulligan taken
+  // this game adds one card to what you'll owe the bottom of your library
+  // once you're done mulliganing. See keep_hand below for that second half.
   socket.on(
     'mulligan_hand',
     withRoom((room, player) => {
@@ -776,7 +790,34 @@ io.on('connection', (socket) => {
       shuffle(player.library);
       const n = Math.min(7, player.library.length);
       for (let i = 0; i < n; i++) player.hand.push(player.library.shift());
-      log(room, `${player.name} mulliganed back to a fresh 7.`);
+      player.mulliganCount = (player.mulliganCount || 0) + 1;
+      player.pendingBottom = player.mulliganCount;
+      log(room, `${player.name} took a mulligan (#${player.mulliganCount}) — drew a fresh hand of ${player.hand.length}.`);
+    })
+  );
+
+  // Finishes a mulligan decision: puts exactly `pendingBottom` cards (chosen
+  // by the player, in whatever order they list them) on the bottom of their
+  // library, then clears pendingBottom so the "put N cards on the bottom"
+  // prompt goes away. A no-op decision (pendingBottom is already 0) is a
+  // valid "keep hand" call too — it just confirms nothing's owed.
+  socket.on(
+    'keep_hand',
+    withRoom((room, player, { bottomUids } = {}, cb) => {
+      const uids = Array.isArray(bottomUids) ? bottomUids : [];
+      const needed = player.pendingBottom || 0;
+      if (uids.length !== needed) {
+        cb && cb({ ok: false, error: `Choose exactly ${needed} card${needed === 1 ? '' : 's'} to put on the bottom.` });
+        return { __acked: true };
+      }
+      for (const uid of uids) {
+        const idx = findCard(player.hand, uid);
+        if (idx === -1) continue;
+        const [card] = player.hand.splice(idx, 1);
+        player.library.push(card); // bottom of the library
+      }
+      player.pendingBottom = 0;
+      log(room, `${player.name} kept a ${player.hand.length}-card hand${needed ? ` after putting ${needed} on the bottom` : ''}.`);
     })
   );
 

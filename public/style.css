@@ -54,6 +54,8 @@ textarea { resize: vertical; font-family: monospace; }
 .btn:hover { background: #30363d; }
 .btn.primary { background: #8957e5; border-color: #8957e5; color: white; font-weight: 600; }
 .btn.primary:hover { background: #9b6ff0; }
+.btn.warn { background: #d29922; border-color: #d29922; color: #0d1117; font-weight: 600; }
+.btn.warn:hover { background: #e3ac3a; }
 .btn.tiny { padding: 4px 10px; font-size: 12px; }
 .error { color: #ff7b72; font-size: 13px; min-height: 18px; }
 .room-code { font-family: monospace; letter-spacing: 3px; background: #0d1117; padding: 4px 10px; border-radius: 6px; border: 1px solid #30363d; }
@@ -262,6 +264,7 @@ textarea { resize: vertical; font-family: monospace; }
 .card.tapped { transform: rotate(90deg); }
 .card.facedown { background-image: none !important; background: linear-gradient(135deg, #30363d, #161b22); }
 .card.token { display: flex; align-items: center; justify-content: center; text-align: center; font-size: 10px; padding: 4px; }
+.card.selected { outline: 3px solid #d29922; outline-offset: -3px; }
 .card .counters { position: absolute; bottom: -6px; right: -6px; display: flex; flex-wrap: wrap; gap: 2px; max-width: 90px; }
 .card .counter-badge { background: #8957e5; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 .card-back-mini { width: 40px; height: 56px; border-radius: 4px; background: linear-gradient(135deg, #30363d, #161b22); border: 1px solid #444; flex-shrink: 0; }

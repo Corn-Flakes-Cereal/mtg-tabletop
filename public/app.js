@@ -1188,6 +1188,12 @@
     document.getElementById('graveyard-count').textContent = you.graveyard.length;
     document.getElementById('exile-count').textContent = you.exile.length;
 
+    // --- mulligan (London mulligan — see server.js's mulligan_hand/keep_hand) ---
+    const pendingBottom = you.pendingBottom || 0;
+    btnKeepHand.classList.toggle('hidden', pendingBottom === 0);
+    btnKeepHand.textContent = `Keep Hand (bottom ${pendingBottom})`;
+    renderMulliganModal(); // no-op if the modal isn't open — keeps it live if it is
+
     // --- self battlefield ---
     renderBattlefieldLayer(selfStageMeta.layer, you.battlefield, state.you, true);
 
@@ -1403,6 +1409,80 @@
   document.getElementById('btn-draw1').addEventListener('click', () => socket.emit('draw_card', { count: 1 }));
   document.getElementById('btn-shuffle').addEventListener('click', () => socket.emit('shuffle_library', {}));
   document.getElementById('btn-mulligan').addEventListener('click', () => socket.emit('mulligan_hand', {}));
+
+  // -------------------------------------------------------------------------
+  // Mulligan (London mulligan): each Mulligan click draws a fresh 7 and
+  // tallies one more card owed to the bottom of the library. This modal is
+  // the second half — picking which cards go to the bottom before the hand
+  // counts as kept. See mulligan_hand/keep_hand in server.js.
+  // -------------------------------------------------------------------------
+  const mulliganModal = document.getElementById('mulligan-modal');
+  const mulliganModalSub = document.getElementById('mulligan-modal-sub');
+  const mulliganModalList = document.getElementById('mulligan-modal-list');
+  const mulliganConfirmBtn = document.getElementById('mulligan-modal-confirm');
+  const btnKeepHand = document.getElementById('btn-keep-hand');
+  let mulliganSelected = new Set(); // uids currently chosen for the bottom
+
+  function renderMulliganModal() {
+    if (mulliganModal.classList.contains('hidden') || !latestState) return;
+    const you = latestState.players[latestState.you];
+    if (!you) return;
+    const needed = you.pendingBottom || 0;
+
+    // Hand may have changed (another mulligan taken) since the modal opened
+    // — drop any selections that no longer exist in hand.
+    const handUids = new Set(you.hand.map((c) => c.uid));
+    mulliganSelected = new Set([...mulliganSelected].filter((uid) => handUids.has(uid)));
+
+    mulliganModalSub.textContent = `Choose ${needed} card${needed === 1 ? '' : 's'} to put on the bottom of your library — selected ${mulliganSelected.size} / ${needed}.`;
+    mulliganModalList.innerHTML = '';
+    you.hand.forEach((card) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'pile-card-wrap';
+      const el = document.createElement('div');
+      const selected = mulliganSelected.has(card.uid);
+      el.className = 'card' + (card.isToken && !card.image ? ' token' : '') + (selected ? ' selected' : '');
+      el.style = cardStyleAttrs(card);
+      el.title = card.name;
+      el.addEventListener('click', () => {
+        if (selected) {
+          mulliganSelected.delete(card.uid);
+        } else if (mulliganSelected.size < needed) {
+          mulliganSelected.add(card.uid);
+        }
+        renderMulliganModal();
+      });
+      wrap.appendChild(el);
+      const name = document.createElement('div');
+      name.className = 'pile-card-name';
+      name.textContent = card.name;
+      wrap.appendChild(name);
+      mulliganModalList.appendChild(wrap);
+    });
+
+    mulliganConfirmBtn.disabled = mulliganSelected.size !== needed;
+  }
+
+  function openMulliganModal() {
+    mulliganSelected = new Set();
+    mulliganModal.classList.remove('hidden');
+    renderMulliganModal();
+  }
+  function closeMulliganModal() {
+    mulliganModal.classList.add('hidden');
+  }
+
+  btnKeepHand.addEventListener('click', openMulliganModal);
+  document.getElementById('mulligan-modal-cancel').addEventListener('click', closeMulliganModal);
+  document.getElementById('mulligan-modal-confirm').addEventListener('click', () => {
+    socket.emit('keep_hand', { bottomUids: [...mulliganSelected] }, (res) => {
+      if (!res || !res.ok) {
+        alert((res && res.error) || 'Could not keep hand.');
+        return;
+      }
+      closeMulliganModal();
+    });
+  });
 
   document.querySelectorAll('[data-life]').forEach((btn) => {
     btn.addEventListener('click', () => socket.emit('update_life', { delta: parseInt(btn.dataset.life, 10) }));
