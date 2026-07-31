@@ -813,6 +813,29 @@ io.on('connection', (socket) => {
     })
   );
 
+  // Hands a battlefield card to another player's battlefield outright — for
+  // control-changing effects (Mind Control, Threaten, etc.). This app
+  // doesn't model owner vs. controller as separate concepts (that's a real
+  // rules distinction this bookkeeping tool has no reason to enforce): once
+  // control changes, the card is simply added to the new controller's
+  // battlefield array like any of their own cards, tap state and counters
+  // intact. If it dies or the effect ends, whoever's playing moves it back
+  // (or to whichever zone the table agrees on) with the normal zone-move
+  // actions, same as everything else here.
+  socket.on(
+    'give_control',
+    withRoom((room, player, { uid, fromOwnerId, toOwnerId }) => {
+      const from = room.players[fromOwnerId];
+      const to = room.players[toOwnerId];
+      if (!from || !to || fromOwnerId === toOwnerId) return;
+      const idx = findCard(from.battlefield, uid);
+      if (idx === -1) return;
+      const [card] = from.battlefield.splice(idx, 1);
+      to.battlefield.push(card);
+      log(room, `${player.name} gave control of ${card.faceDown ? 'a card' : card.name} to ${to.name}.`);
+    })
+  );
+
   socket.on(
     'reorder_battlefield',
     withRoom((room, player, { uid, x, y }) => {

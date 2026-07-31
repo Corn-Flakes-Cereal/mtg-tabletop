@@ -1501,6 +1501,28 @@
       const div2 = document.createElement('div');
       div2.className = 'divider';
       contextMenu.appendChild(div2);
+
+      // Control-changing effects (Mind Control, Threaten, etc.) — hands the
+      // card to another player's battlefield outright. This app doesn't
+      // track owner vs. controller separately (see the comment on the
+      // give_control handler in server.js), so from this point on it's
+      // simply theirs: they can tap it, move it, and it's their card if it
+      // dies. Move it back the same way (or however the table agrees) once
+      // an effect ends.
+      if (latestState) {
+        const others = latestState.playerOrder.filter((pid) => pid !== ownerId);
+        if (others.length) {
+          others.forEach((pid) => {
+            const name = latestState.players[pid]?.name || '?';
+            contextMenu.appendChild(menuItem(`Give control to ${name}`, () =>
+              socket.emit('give_control', { uid, fromOwnerId: ownerId, toOwnerId: pid })
+            ));
+          });
+          const div3 = document.createElement('div');
+          div3.className = 'divider';
+          contextMenu.appendChild(div3);
+        }
+      }
     }
 
     ZONE_MOVE_LABELS.forEach(([z, label]) => {
